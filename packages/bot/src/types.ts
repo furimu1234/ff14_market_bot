@@ -1,10 +1,19 @@
-import type { DataStoreInterface } from '@example_build/db';
+import type { DataStoreInterface } from '@ff14_market/db';
 import type {
 	Interaction,
 	RESTPostAPIChatInputApplicationCommandsJSONBody,
 } from 'discord.js';
+import '@sapphire/pieces';
 
-export type DataStore = unknown; // @tts/db の型があるなら差し替え可
+import type { MakeDataStore } from '@ff14_market/db';
+
+type DataStore = ReturnType<typeof MakeDataStore>;
+
+declare module '@sapphire/pieces' {
+	interface Container {
+		dataStore: DataStore;
+	}
+}
 
 export type IContainer = {
 	getDataStore: () => DataStoreInterface;

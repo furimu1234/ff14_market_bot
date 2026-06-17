@@ -1,24 +1,24 @@
 {
-  "id": "9065e490-f5a0-4847-944f-7a4e0b2019fd",
+  "id": "8af83ac6-5111-4965-a07b-4675efe78460",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "build_example.welcome_message": {
-      "name": "welcome_message",
-      "schema": "build_example",
+    "public.homeworld": {
+      "name": "homeworld",
+      "schema": "",
       "columns": {
-        "server_id": {
-          "name": "server_id",
+        "user_id": {
+          "name": "user_id",
           "type": "varchar(19)",
           "primaryKey": true,
           "notNull": true
         },
-        "message": {
-          "name": "message",
+        "worldname": {
+          "name": "worldname",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "created_at": {
           "name": "created_at",
@@ -35,11 +35,11 @@
         }
       },
       "indexes": {
-        "welcome_message_server_id": {
-          "name": "welcome_message_server_id",
+        "homeworld_user_id": {
+          "name": "homeworld_user_id",
           "columns": [
             {
-              "expression": "server_id",
+              "expression": "user_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

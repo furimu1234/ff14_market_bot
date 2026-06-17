@@ -1,5 +1,6 @@
-import { MakeDataStore, schema } from '@example_build/db';
-import { Client, GatewayIntentBits, Partials } from 'discord.js';
+import { MakeDataStore, schema } from '@ff14_market/db';
+import { SapphireClient } from '@sapphire/framework';
+import { GatewayIntentBits, Partials } from 'discord.js';
 import * as dotenv from 'dotenv';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
@@ -28,7 +29,10 @@ export const Container = (): IContainer => {
 
 export const container: ContainerRef = { current: Container() };
 
-export const botClient = new Client({
+export const botClient = new SapphireClient({
+	baseUserDirectory: __dirname,
+	defaultPrefix: null,
+	loadMessageCommandListeners: false,
 	intents: [
 		GatewayIntentBits.Guilds,
 		GatewayIntentBits.GuildMessages,

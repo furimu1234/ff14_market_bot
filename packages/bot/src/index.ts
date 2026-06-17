@@ -1,51 +1,65 @@
-import * as path from 'node:path';
-import { schema } from '@example_build/db';
-import { type Client, Events } from 'discord.js';
+import { MakeDataStore, schema } from '@ff14_market/db';
+import { container, SapphireClient } from '@sapphire/framework';
+import { GatewayIntentBits, Partials } from 'discord.js';
+import * as dotenv from 'dotenv';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
-import { loadCommands } from './commands/main';
-import { botClient, Container, container } from './container';
-import { loadEvents } from './loadEvents';
-import { getEnv } from './utils/env';
-import { slashCommandRegister } from './utils/registerCommands';
 
-loadEvents(botClient, path.resolve(path.dirname(__filename), './events'));
+dotenv.config({ path: '../../.env' });
 
-// 最小の ready ログだけ
-botClient.once(Events.ClientReady, async (c) => {
-	console.log(`✅ Logged in as ${c.user.tag}`);
+export class BotClient extends SapphireClient {
+	public constructor() {
+		super({
+			baseUserDirectory: __dirname,
+			intents: [
+				GatewayIntentBits.Guilds,
+				GatewayIntentBits.GuildMessages,
+				GatewayIntentBits.GuildVoiceStates,
+				GatewayIntentBits.GuildMembers,
+				GatewayIntentBits.GuildPresences,
+				GatewayIntentBits.MessageContent,
+				GatewayIntentBits.GuildMessageReactions,
+			],
+			partials: [
+				Partials.GuildMember,
+				Partials.User,
+				Partials.Message,
+				Partials.Channel,
+				Partials.Reaction,
+			],
+			loadMessageCommandListeners: true,
+			defaultPrefix: 'fm!',
+		});
 
-	const commands = await loadCommands();
+		this.setMaxListeners(0);
+	}
 
-	if (!botClient.user) return;
+	public async setup() {
+		const pool = new Pool({
+			connectionString: process.env.PG_URL,
+		});
 
-	slashCommandRegister(botClient.user, commands);
-});
+		const db = drizzle<typeof schema>(pool, { schema });
+		const dataStore = MakeDataStore(db);
 
-// 起動に十分な最小構築
-container.current = Container();
+		container.dataStore = dataStore;
+		// const migrationsFolder = '../db/drizzle';
+		// await migrate(db, { migrationsFolder: migrationsFolder });
+		// console.log('migrate done');
+	}
 
-export const runClient = async (client: Client) => {
-	const pool = new Pool({
-		connectionString: process.env.PG_URL,
-	});
+	public async start() {
+		await this.setup();
 
-	const db = drizzle<typeof schema>(pool, {
-		schema: schema,
-	});
+		const token = process.env.TOKEN;
+		if (!token) throw new Error('TOKEN is not set');
 
-	await migrate(db, {
-		migrationsFolder: path.resolve(
-			path.dirname(__filename),
-			'../../db/drizzle',
-		),
-		migrationsSchema: path.resolve(path.dirname(__filename), '../../db/schema'),
-	});
-	client.login(getEnv('TOKEN')).catch((e) => {
-		console.error('❌ Login failed:', e);
-		process.exit(1);
-	});
-};
+		return this.login(token);
+	}
+}
 
-runClient(botClient);
+const client = new BotClient();
+client
+	.start()
+	.then(() => console.log('login'))
+	.catch((e) => console.log('error', e));

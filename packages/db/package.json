@@ -1,5 +1,5 @@
 {
-  "name": "@example_build/db",
+  "name": "@ff14_market/db",
   "private": true,
   "type": "commonjs",
   "main": "dist/index.js",
@@ -17,10 +17,10 @@
     "dbInit": "tsx src/init.ts && pnpm generate"
   },
   "dependencies": {
-    "drizzle-kit": "^0.31.0",
-    "drizzle-orm": "^0.43.1"
+    "drizzle-kit": "^0.31.10",
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   }
 }
