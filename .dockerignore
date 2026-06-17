@@ -1,0 +1,13 @@
+.git
+.agents
+.codex
+.containers
+.podman-home
+.env
+node_modules
+packages/*/node_modules
+packages/*/dist
+Dockerfile
+docker-compose.yml
+README.md
+flake.lock
