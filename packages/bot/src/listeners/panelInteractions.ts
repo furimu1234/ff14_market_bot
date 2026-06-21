@@ -22,6 +22,7 @@ import {
 	TextInputBuilder,
 	TextInputStyle,
 } from 'discord.js';
+import { DAILY_TOP_PRICE_CALCULATION_CUSTOM_ID } from '../dailyTopPriceMessage';
 import { buildMarketMessage } from '../marketMessage';
 import { buildMySetMessage } from '../mySetMessage';
 import {
@@ -67,6 +68,21 @@ export class PanelInteractionsListener extends Listener {
  * パネル管理/実行ボタンを処理します。
  */
 const handlePanelButton = async (interaction: ButtonInteraction) => {
+	if (interaction.customId === DAILY_TOP_PRICE_CALCULATION_CUSTOM_ID) {
+		await interaction.reply({
+			content: [
+				'📈 **需要ランキングの計算方法**',
+				'最安値が 1,000,000 gil 以下のアイテムを対象にします。',
+				'その中から、最近の売れ行きが確認できるアイテムを優先します。',
+				'ランキング順は「売れ行き」と「最安値」を組み合わせて決めています。',
+				'売れ行きが高く、価格も高いアイテムほど上位になりやすいです。',
+				'ランキング本文では見やすさを優先し、計算用の数値は表示していません。',
+			].join('\n'),
+			ephemeral: true,
+		});
+		return;
+	}
+
 	const parsed = parsePanelCustomId(interaction.customId);
 	if (!parsed) return;
 
@@ -152,7 +168,7 @@ const handlePanelChannelSelect = async (
 
 	if (parsed.panelType === 'dailyTop') {
 		await interaction.editReply({
-			content: `🏆 <#${channelId}> を毎日 JST 0:00 の高額ランキング投稿先に設定しました。`,
+			content: `📈 <#${channelId}> を毎日 JST 0:30 の需要ランキング更新先に設定しました。`,
 			components: [],
 		});
 		return;

@@ -1,4 +1,4 @@
-import { request } from './base';
+import { ApiRequestError, request } from './base';
 import { UNIVERSALIS_BASE_URL } from './consts';
 import type {
 	MarketResponse,
@@ -9,6 +9,10 @@ import type {
 } from './types';
 
 const TOP_PRICE_BATCH_SIZE = 100;
+const TOP_PRICE_MAX_MIN_PRICE = 1_000_000;
+const DEMAND_CANDIDATE_LIMIT = 300;
+const DEMAND_DETAIL_BATCH_SIZE = 20;
+const DEMAND_HISTORY_ENTRIES = 10;
 
 /**
  * 指定アイテムの日本DC各ワールドにおける最安出品を取得します。
@@ -19,17 +23,30 @@ export const fetchJapanPrices = async (
 ): Promise<WorldPrice[]> => {
 	const results = await Promise.all(
 		worlds.map(async (world) => {
-			const response = await request<MarketResponse>(
-				`${UNIVERSALIS_BASE_URL}/${encodeURIComponent(world.name)}/${itemId}?listings=1&entries=0`,
-			);
-			const listing = response.listings?.[0];
+			try {
+				const response = await request<MarketResponse>(
+					`${UNIVERSALIS_BASE_URL}/${encodeURIComponent(world.name)}/${itemId}?listings=1&entries=0`,
+				);
+				const listing = response.listings?.[0];
 
-			return {
-				...world,
-				pricePerUnit: listing?.pricePerUnit,
-				quantity: listing?.quantity,
-				hq: listing?.hq ?? false,
-			};
+				return {
+					...world,
+					pricePerUnit: listing?.pricePerUnit,
+					quantity: listing?.quantity,
+					hq: listing?.hq ?? false,
+				};
+			} catch (error) {
+				if (error instanceof ApiRequestError && error.status === 404) {
+					return {
+						...world,
+						pricePerUnit: undefined,
+						quantity: undefined,
+						hq: false,
+					};
+				}
+
+				throw error;
+			}
 		}),
 	);
 
@@ -44,13 +61,13 @@ export const fetchMarketableItemIds = async (): Promise<number[]> => {
 };
 
 /**
- * 日本リージョン全体で現在出品されている最高単価トップ 10 を取得します。
+ * 日本リージョン全体で需要があり、最安値が 100 万 gil 以内のアイテム Top 10 を取得します。
  */
-export const fetchJapanTopMaximumPrices = async (
+export const fetchJapanTopDemandPricesUnderLimit = async (
 	limit: number = 10,
 ): Promise<TopMarketPrice[]> => {
 	const itemIds = await fetchMarketableItemIds();
-	const topPrices: TopMarketPrice[] = [];
+	const candidates: TopMarketPrice[] = [];
 
 	for (const batch of chunk(itemIds, TOP_PRICE_BATCH_SIZE)) {
 		const response = await request<MultiMarketResponse>(
@@ -58,19 +75,96 @@ export const fetchJapanTopMaximumPrices = async (
 		);
 
 		for (const item of Object.values(response.items ?? {})) {
-			if (!item.hasData || !item.itemID || !item.maxPrice) continue;
-			if (item.maxPrice <= 0) continue;
+			if (!item.hasData || !item.itemID || !item.minPrice) continue;
+			if (item.minPrice <= 0 || item.minPrice > TOP_PRICE_MAX_MIN_PRICE) {
+				continue;
+			}
 
-			topPrices.push({
+			candidates.push({
 				itemId: item.itemID,
-				maxPrice: item.maxPrice,
+				minPrice: item.minPrice,
+				saleVelocity: 0,
+				demandScore: item.minPrice,
+				recentHistoryCount: item.recentHistoryCount ?? 0,
+				unitsSold: item.unitsSold ?? 0,
 			});
 		}
 	}
 
-	return topPrices
-		.sort((a, b) => b.maxPrice - a.maxPrice || a.itemId - b.itemId)
+	const demandPrices = await fetchDemandDetails(
+		candidates
+			.sort((a, b) => b.minPrice - a.minPrice || a.itemId - b.itemId)
+			.slice(0, DEMAND_CANDIDATE_LIMIT),
+	);
+
+	const rankingSource = demandPrices.length > 0 ? demandPrices : candidates;
+
+	return rankingSource
+		.sort(
+			(a, b) =>
+				b.demandScore - a.demandScore ||
+				b.saleVelocity - a.saleVelocity ||
+				b.minPrice - a.minPrice ||
+				a.itemId - b.itemId,
+		)
 		.slice(0, limit);
+};
+
+const fetchDemandDetails = async (
+	candidates: TopMarketPrice[],
+): Promise<TopMarketPrice[]> => {
+	const candidateByItemId = new Map(
+		candidates.map((candidate) => [candidate.itemId, candidate]),
+	);
+	const demandPrices: TopMarketPrice[] = [];
+
+	for (const batch of chunk(candidates, DEMAND_DETAIL_BATCH_SIZE)) {
+		const response = await request<MultiMarketResponse>(
+			`${UNIVERSALIS_BASE_URL}/Japan/${batch
+				.map((candidate) => candidate.itemId)
+				.join(',')}?listings=0&entries=${DEMAND_HISTORY_ENTRIES}`,
+		).catch(() => undefined);
+		if (!response) continue;
+
+		for (const item of Object.values(response.items ?? {})) {
+			if (!item.itemID) continue;
+
+			const candidate = candidateByItemId.get(item.itemID);
+			if (!candidate) continue;
+
+			const saleVelocity = getSaleVelocity(item);
+			const demandCount = getDemandCount(item);
+			if (saleVelocity <= 0 && demandCount <= 0) continue;
+
+			demandPrices.push({
+				...candidate,
+				saleVelocity,
+				demandScore: Math.max(saleVelocity, demandCount) * candidate.minPrice,
+				recentHistoryCount: item.recentHistoryCount ?? 0,
+				unitsSold: item.unitsSold ?? 0,
+			});
+		}
+	}
+
+	return demandPrices;
+};
+
+const getSaleVelocity = (item: {
+	regularSaleVelocity?: number;
+	nqSaleVelocity?: number;
+	hqSaleVelocity?: number;
+}) => {
+	return Math.max(
+		item.regularSaleVelocity ?? 0,
+		(item.nqSaleVelocity ?? 0) + (item.hqSaleVelocity ?? 0),
+	);
+};
+
+const getDemandCount = (item: {
+	recentHistoryCount?: number;
+	unitsSold?: number;
+}) => {
+	return Math.max(item.recentHistoryCount ?? 0, item.unitsSold ?? 0);
 };
 
 const chunk = <T>(items: T[], size: number) => {

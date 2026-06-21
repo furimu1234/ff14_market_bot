@@ -34,9 +34,9 @@ export const buildPanelAdminMessage = (guildId: string) => {
 		...(showDailyTopPrice
 			? [
 					{
-						name: '🏆 高額ランキング投稿',
+						name: '📈 需要ランキング更新',
 						value:
-							'毎日 JST 0:00 に全ワールド最高価格ランキング Top 10 を投稿します。',
+							'毎日 JST 0:30 に最安値100万gil以内の需要ランキング Top 10 を更新します。',
 					},
 				]
 			: []),
@@ -54,7 +54,7 @@ export const buildPanelAdminMessage = (guildId: string) => {
 			? [
 					new ButtonBuilder()
 						.setCustomId(createPanelAdminButtonCustomId('dailyTop'))
-						.setLabel('🏆 高額ランキング投稿')
+						.setLabel('📈 需要ランキング更新')
 						.setStyle(ButtonStyle.Primary),
 				]
 			: []),
@@ -208,11 +208,11 @@ const isPanelSettingType = (
 const getPanelEmoji = (panelType: PanelSettingType) => {
 	if (panelType === 'myset') return '📌';
 	if (panelType === 'market') return '🛒';
-	return '🏆';
+	return '📈';
 };
 
 const getPanelLabel = (panelType: PanelSettingType) => {
 	if (panelType === 'myset') return 'マイセット表示パネル';
 	if (panelType === 'market') return 'アイテム価格表示パネル';
-	return '高額ランキング投稿';
+	return '需要ランキング更新';
 };

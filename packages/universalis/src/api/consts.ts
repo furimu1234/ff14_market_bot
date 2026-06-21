@@ -1,5 +1,6 @@
 export const UNIVERSALIS_BASE_URL = 'https://universalis.app/api/v2';
 export const XIVAPI_SEARCH_URL = 'https://xivapi.com/search';
+export const XIVAPI_V2_SEARCH_URL = 'https://v2.xivapi.com/api/search';
 export const CAFEMAKER_SEARCH_URL = 'https://cafemaker.wakingsands.com/search';
 export const JAPAN_DATA_CENTERS = new Set([
 	'Elemental',

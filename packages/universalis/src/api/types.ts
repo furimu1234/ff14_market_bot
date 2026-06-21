@@ -39,9 +39,17 @@ export type MarketResponse = {
 
 export type MultiMarketItemResponse = {
 	itemID?: number;
+	minPrice?: number;
+	minPriceNQ?: number;
+	minPriceHQ?: number;
 	maxPrice?: number;
 	maxPriceNQ?: number;
 	maxPriceHQ?: number;
+	regularSaleVelocity?: number;
+	nqSaleVelocity?: number;
+	hqSaleVelocity?: number;
+	recentHistoryCount?: number;
+	unitsSold?: number;
 	hasData?: boolean;
 };
 
@@ -57,5 +65,9 @@ export type WorldPrice = WorldEntry & {
 
 export type TopMarketPrice = {
 	itemId: number;
-	maxPrice: number;
+	minPrice: number;
+	saleVelocity: number;
+	demandScore: number;
+	recentHistoryCount: number;
+	unitsSold: number;
 };

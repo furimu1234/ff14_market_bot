@@ -1,5 +1,9 @@
 import { request } from './base';
-import { CAFEMAKER_SEARCH_URL, XIVAPI_SEARCH_URL } from './consts';
+import {
+	CAFEMAKER_SEARCH_URL,
+	XIVAPI_SEARCH_URL,
+	XIVAPI_V2_SEARCH_URL,
+} from './consts';
 import type { ItemDetail, ItemSearchResult } from './types';
 
 /**
@@ -8,17 +12,30 @@ import type { ItemDetail, ItemSearchResult } from './types';
 export const searchItem = async (
 	query: string,
 ): Promise<ItemSearchResult | undefined> => {
-	const searchParams = new URLSearchParams({
+	const legacySearchParams = new URLSearchParams({
 		indexes: 'Item',
 		string: query,
 		language: 'ja',
 		columns: 'ID,Name',
 	});
+	const v2SearchParams = new URLSearchParams({
+		sheets: 'Item',
+		query: `Name~"${escapeSearchQuery(query)}"`,
+		language: 'ja',
+	});
 
 	const results = await Promise.allSettled([
-		fetchItemFromSearchApi(`${XIVAPI_SEARCH_URL}?${searchParams.toString()}`),
+		fetchItemFromV2SearchApi(
+			`${XIVAPI_V2_SEARCH_URL}?${v2SearchParams.toString()}`,
+			query,
+		),
 		fetchItemFromSearchApi(
-			`${CAFEMAKER_SEARCH_URL}?${searchParams.toString()}`,
+			`${XIVAPI_SEARCH_URL}?${legacySearchParams.toString()}`,
+			query,
+		),
+		fetchItemFromSearchApi(
+			`${CAFEMAKER_SEARCH_URL}?${legacySearchParams.toString()}`,
+			query,
 		),
 	]);
 
@@ -60,17 +77,71 @@ export const fetchItemDetail = async (
  */
 const fetchItemFromSearchApi = async (
 	url: string,
+	query: string,
 ): Promise<ItemSearchResult | undefined> => {
 	const body = await request<{
 		Results?: { ID?: number; Name?: string }[];
 	}>(url);
-	const exactMatch = body.Results?.find((item) => item.Name && item.ID);
-	if (!exactMatch?.ID || !exactMatch.Name) return undefined;
+	const item = findBestItemMatch(
+		body.Results?.map((result) => ({
+			id: result.ID,
+			name: result.Name,
+		})),
+		query,
+	);
+	if (!item) return undefined;
 
-	return {
-		id: exactMatch.ID,
-		name: exactMatch.Name,
-	};
+	return item;
+};
+
+/**
+ * XIVAPI v2 検索レスポンスから最も近いアイテムを取り出します。
+ */
+const fetchItemFromV2SearchApi = async (
+	url: string,
+	query: string,
+): Promise<ItemSearchResult | undefined> => {
+	const body = await request<{
+		results?: {
+			row_id?: number;
+			fields?: { Name?: string };
+		}[];
+	}>(url);
+
+	return findBestItemMatch(
+		body.results?.map((result) => ({
+			id: result.row_id,
+			name: result.fields?.Name,
+		})),
+		query,
+	);
+};
+
+const findBestItemMatch = (
+	items: { id?: number; name?: string }[] | undefined,
+	query: string,
+): ItemSearchResult | undefined => {
+	const validItems = items?.filter(
+		(item): item is { id: number; name: string } =>
+			Boolean(item.id && item.name),
+	);
+	if (!validItems || validItems.length === 0) return undefined;
+
+	const normalizedQuery = normalizeItemName(query);
+	const exactMatch = validItems.find(
+		(item) => normalizeItemName(item.name) === normalizedQuery,
+	);
+	const item = exactMatch ?? validItems[0];
+
+	return { id: item.id, name: item.name };
+};
+
+const normalizeItemName = (value: string) => {
+	return value.normalize('NFKC').trim().toLocaleLowerCase('ja-JP');
+};
+
+const escapeSearchQuery = (value: string) => {
+	return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 };
 
 /**
@@ -108,31 +179,54 @@ const fetchItemDetailFromApi = async (
 const inferObtainMethod = (
 	links: Record<string, Record<string, unknown> | unknown> | undefined,
 ) => {
-	if (!links) return '詳細情報を参照';
+	if (!links) return '不明';
 
 	const keys = Object.keys(links);
 	const methods = new Set<string>();
 
 	if (keys.includes('GatheringItem')) methods.add('採集');
-	if (keys.includes('FishingSpot') || keys.includes('FishParameter')) {
+	if (
+		keys.includes('FishingSpot') ||
+		keys.includes('FishParameter') ||
+		keys.includes('SpearfishingItem')
+	) {
 		methods.add('釣り');
 	}
 	if (keys.includes('Quest')) methods.add('クエスト');
-	if (keys.includes('GilShop') || keys.includes('SpecialShop')) {
+	if (
+		keys.includes('GilShop') ||
+		keys.includes('SpecialShop') ||
+		keys.includes('InclusionShop') ||
+		keys.includes('CollectablesShop') ||
+		keys.includes('FateShop') ||
+		keys.includes('MobHuntReward')
+	) {
 		methods.add('ショップ/交換');
 	}
 	if (
 		keys.includes('RetainerTaskNormal') ||
-		keys.includes('RetainerTaskRandom')
+		keys.includes('RetainerTaskRandom') ||
+		keys.includes('RetainerTaskParameter')
 	) {
 		methods.add('リテイナー探索');
 	}
 	if (
 		keys.includes('InstanceContent') ||
-		keys.includes('ContentFinderCondition')
+		keys.includes('ContentFinderCondition') ||
+		keys.includes('ContentRoulette')
 	) {
 		methods.add('コンテンツ報酬');
 	}
+	if (keys.includes('TreasureHuntRank')) methods.add('宝の地図');
+	if (keys.includes('GardeningSeed')) methods.add('栽培');
+	if (
+		keys.includes('AirshipExplorationPoint') ||
+		keys.includes('SubmarineExploration')
+	) {
+		methods.add('探索航海');
+	}
+	if (keys.includes('Achievement')) methods.add('アチーブメント');
+	if (keys.includes('CompanyCraftSequence')) methods.add('カンパニークラフト');
 
 	const recipeLinks = links.Recipe;
 	if (isRecord(recipeLinks)) {
@@ -145,7 +239,7 @@ const inferObtainMethod = (
 		}
 	}
 
-	if (methods.size === 0) return '詳細情報を参照';
+	if (methods.size === 0) return '不明';
 	return [...methods].join(' / ');
 };
 

@@ -1,10 +1,10 @@
-import { getGuildPanelsByType } from '@ff14_market/db';
-import { container, Listener } from '@sapphire/framework';
+import { Events, Listener } from '@sapphire/framework';
 import type { Client } from 'discord.js';
 import { buildDailyTopPriceMessage } from '../dailyTopPriceMessage';
 
-const DAILY_TOP_PANEL_TYPE = 'dailyTop';
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const DAILY_TOP_UPDATE_HOUR = 0;
+const DAILY_TOP_UPDATE_MINUTE = 30;
 
 let timer: NodeJS.Timeout | undefined;
 
@@ -15,18 +15,21 @@ export class DailyTopPriceSchedulerListener extends Listener {
 	) {
 		super(context, {
 			...options,
-			event: 'ready',
+			event: Events.ClientReady,
 			once: true,
 		});
 	}
 
 	public override run(client: Client) {
+		void postDailyTopPrices(client).catch((error) => {
+			console.log('daily top price startup update failed', error);
+		});
 		scheduleNextDailyTopPost(client);
 	}
 }
 
 /**
- * 次の JST 0:00 に高額ランキング投稿を予約します。
+ * 次の JST 0:30 に需要ランキング更新を予約します。
  */
 const scheduleNextDailyTopPost = (client: Client) => {
 	if (timer) clearTimeout(timer);
@@ -36,48 +39,57 @@ const scheduleNextDailyTopPost = (client: Client) => {
 			console.log('daily top price scheduler failed', error);
 		});
 		scheduleNextDailyTopPost(client);
-	}, getMsUntilNextJstMidnight());
+	}, getMsUntilNextJstUpdateTime());
 };
 
 /**
- * 設定済みチャンネルへ高額ランキングを投稿します。
+ * 設定済みチャンネルへ需要ランキングを投稿/更新します。
  */
 const postDailyTopPrices = async (client: Client) => {
-	const panels = await container.dataStore.do(async (db) => {
-		return await getGuildPanelsByType(db, DAILY_TOP_PANEL_TYPE);
-	});
-	if (panels.length === 0) return;
-
 	const message = await buildDailyTopPriceMessage();
 
-	for (const panel of panels) {
-		const channel = await client.channels
-			.fetch(panel.channelId)
-			.catch(() => null);
-		if (!channel?.isSendable()) continue;
+	const channel = await client.channels.cache.get('1516638550819344404');
 
-		await channel.send(message).catch((error) => {
-			console.log('daily top price post failed', {
-				guildId: panel.guildId,
-				channelId: panel.channelId,
+	if (!channel?.isSendable()) return;
+
+	const currentMessage = await channel.messages
+		.fetch('1516828513821261965')
+		.catch(() => undefined);
+
+	if (currentMessage) {
+		const editedMessage = await currentMessage.edit(message).catch((error) => {
+			console.log('daily top price edit failed', {
 				error,
 			});
+			return undefined;
 		});
+		if (editedMessage) return;
 	}
+
+	const sentMessage = await channel.send(message).catch((error) => {
+		console.log('daily top price post failed', {
+			error,
+		});
+		return undefined;
+	});
+	if (!sentMessage) return;
 };
 
-const getMsUntilNextJstMidnight = () => {
+const getMsUntilNextJstUpdateTime = () => {
 	const now = new Date();
 	const jstNow = new Date(now.getTime() + JST_OFFSET_MS);
-	const nextJstMidnight = Date.UTC(
+	let nextJstUpdateTime = Date.UTC(
 		jstNow.getUTCFullYear(),
 		jstNow.getUTCMonth(),
-		jstNow.getUTCDate() + 1,
-		0,
-		0,
+		jstNow.getUTCDate(),
+		DAILY_TOP_UPDATE_HOUR,
+		DAILY_TOP_UPDATE_MINUTE,
 		0,
 		0,
 	);
+	if (nextJstUpdateTime <= jstNow.getTime()) {
+		nextJstUpdateTime += 24 * 60 * 60 * 1000;
+	}
 
-	return nextJstMidnight - jstNow.getTime();
+	return nextJstUpdateTime - jstNow.getTime();
 };

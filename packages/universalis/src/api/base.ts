@@ -4,6 +4,16 @@ const RATE_LIMIT_STATUS = 429;
 const MAX_RATE_LIMIT_RETRIES = 5;
 const DEFAULT_RATE_LIMIT_RETRY_MS = 1000;
 
+export class ApiRequestError extends Error {
+	public constructor(
+		public readonly status: number,
+		public readonly url: string,
+	) {
+		super(`Request failed: ${status} ${url}`);
+		this.name = 'ApiRequestError';
+	}
+}
+
 /**
  * JSON API にリクエストし、429 の場合だけ待機して最大 5 回リトライします。
  */
@@ -18,7 +28,7 @@ export const request = async <T>(url: string): Promise<T> => {
 			response.status !== RATE_LIMIT_STATUS ||
 			attempt === MAX_RATE_LIMIT_RETRIES
 		) {
-			throw new Error(`Request failed: ${response.status} ${url}`);
+			throw new ApiRequestError(response.status, url);
 		}
 
 		await sleep(getRateLimitRetryDelayMs(response, attempt) / 1000);
